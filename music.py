@@ -9,6 +9,16 @@ from discord.ext import commands
 
 
 class MusicCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.volume = None
+
+
+    # TEST
     @commands.command(name="ping")
     async def ping(self, ctx):
         await ctx.send("pong")
+
+    @commands.command(name="p")
+    async def play(self, ctx, *args):
+        pass
