@@ -21,4 +21,5 @@ class MusicCog(commands.Cog):
 
     @commands.command(name="p")
     async def play(self, ctx, *args):
-        pass
+        for arg in args:
+            print(arg)
