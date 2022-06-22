@@ -56,14 +56,20 @@ class MusicCog(commands.Cog):
         # By typing "-m" the user wants to choose among multiple videos 
         if "-m" in args:
             videos_num = args[args.index("-m") + 1] # look for next argument after "-m" in args list
-            args_list = list(args)
-            print(args_list)
-            args_list.pop(args_list.index("-m") + 1)
-            args_list.remove("-m")
+            args[args.index("-m")] = 0
+            args[args.index("-m") + 1] = 0
+            # args_list = list(args)
+            # print(args_list)
+            # args_list.pop(args_list.index("-m") + 1)
+            # args_list.remove("-m")
         if not videos_num.isdigit():
             raise AttributeError("The argument provided must be a number", videos_num)
         videos_num = int(videos_num)
         if videos_num < 1 or videos_num > 10:
             raise IndexError("The number of videos during the research on YouTube must be between 1 and 10.", str(videos_num))
-        query = " ".join(args_list)
+        query = " ".join(args)
         await self.search_song_on_yt(ctx, query, videos_num)
+
+
+        # S!p music -m 4
+        # ("-m 45 music")
