@@ -5,7 +5,8 @@ If you have any question, please write me at ldvcoding@gmail.com
 '''
 
 
-from tabnanny import check
+import asyncio
+import discord
 from discord.ext import commands
 import youtube_dl
 
@@ -13,63 +14,99 @@ import youtube_dl
 class MusicCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.volume = None
+        self.volume = 1.0
+        self.queue = []
+        self.is_playing = False
+        self.voice_channel = None
+        self.FFMPEG_OPTIONS = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': '-vn' }
         self.YDL_OPTIONS = {
             'format': 'bestaudio',
             'ignoreerrors':'True',
             'noplaylist': 'True',
+            'nowarnings': 'True',
             'quiet': 'True' }
 
 
+    async def connect_to_voice_channel(self, ctx, voice) -> bool:
+        try:
+            self.voice_channel = await voice.channel.connect()
+            await ctx.guild.change_voice_state(channel=self.voice_channel.channel, self_mute=False, self_deaf=True)
+            return True
+        except Exception as e:
+            print(e)
+            return False
 
-    async def ask_video(self, ctx) -> int:
-        await ctx.send("Which video do you want to be played?")
+
+
+    async def ask_video(self, ctx) -> bool:
+        await ctx.send("I found this video. Should I go ahead? [y/n]")
         while True:
-            message = await self.bot.wait_for("message", check=lambda m: m.content.isdigit())
-            print(type(message.content), message)
-            return int(message.content) - 1
+            message = await self.bot.wait_for("message", check=lambda m: m.content == "y" or m.content == "n")
+            if message.content == "y":
+                return True
+            return False
 
 
-
-    async def search_song_on_yt(self, ctx, query:str, videos_num:int) -> bool:
-        video_index = 0
+    async def search_song_on_yt(self, ctx, query:str, ask:bool) -> bool:
         await ctx.send(rf'I am searching on YouTube the first result with "{query}" query.')
         with youtube_dl.YoutubeDL(self.YDL_OPTIONS) as yt_dl:
-            if videos_num > 1:
-                video_index = await self.ask_video(ctx)
-            video = yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][video_index]
+            video = yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
             song_info = {'source': video['formats'][0]['url'], 'title': video['title'],
                             'duration': video['duration'], 'channel': video['channel']}
-            await ctx.send(f"I found {song_info['title']} by {'channel'}. It lasts {song_info['duration']}.")
+            await ctx.send(f"I found {song_info['title']} by {song_info['channel']}. It lasts {song_info['duration']} seconds.") # TODO: seconds to minutes!
+            if ask:
+                if await self.ask_video(ctx) is False:
+                    return
+            self.queue.append([song_info, ctx.author.voice.channel])
+            if self.is_playing is False:
+                await self.play()
+            return True
 
-    # TEST #
-    @commands.command(name="ping")
-    async def ping(self, ctx):
-        await ctx.send("pong")
+
+    def my_after(self, error):
+        next_song = self.queue[0][0]['title']
+        coro = self.play()
+        fut = asyncio.run_coroutine_threadsafe(coro, self.bot.loop)
+        try:
+            fut.result()
+        except:
+            raise discord.errors.DiscordServerError("There was a problem playing next song.")
+
+
+    async def play(self):
+        if len(self.queue) <= 0:
+            self.is_playing = False
+            return
+
+        source = self.queue[0][0]['source']
+        self.queue.pop(0)
+        
+        if self.voice_channel is None or self.voice_channel.is_connected() is False:
+            raise discord.errors.ClientException("The bot is not connected to a voice channel.")
+            
+        if self.voice_channel.is_playing() is False:
+            self.voice_channel.play(discord.FFmpegPCMAudio(source, options=self.FFMPEG_OPTIONS), after = self.my_after)
+        self.voice_channel.source = discord.PCMVolumeTransformer(self.voice_channel.source, volume=self.volume)
+        self.is_playing = True
 
 
     @commands.command(name="p")
-    async def play(self, ctx, *args):
-        videos_num = '1' # It checks if the user wants to choose among multiple videos (default = 1)
-        if len(args) == 0:
-            raise AttributeError("No arguments were provided.", "song name")
-        # By typing "-m" the user wants to choose among multiple videos 
-        if "-m" in args:
-            videos_num = args[args.index("-m") + 1] # look for next argument after "-m" in args list
-            args[args.index("-m")] = 0
-            args[args.index("-m") + 1] = 0
-            # args_list = list(args)
-            # print(args_list)
-            # args_list.pop(args_list.index("-m") + 1)
-            # args_list.remove("-m")
-        if not videos_num.isdigit():
-            raise AttributeError("The argument provided must be a number", videos_num)
-        videos_num = int(videos_num)
-        if videos_num < 1 or videos_num > 10:
-            raise IndexError("The number of videos during the research on YouTube must be between 1 and 10.", str(videos_num))
+    async def p(self, ctx, *args):
         query = " ".join(args)
-        await self.search_song_on_yt(ctx, query, videos_num)
+        ask = False
 
+        if ctx.author.voice is None:
+            raise discord.errors.DiscordException("User not connected to a voice channel", ctx.author.voice)
+        if self.voice_channel is None:
+            await self.connect_to_voice_channel(ctx, ctx.author.voice)
+        if len(args) == 0:
+            raise discord.errors.InvalidArgument("No arguments were provided.", "song name")
 
-        # S!p music -m 4
-        # ("-m 45 music")
+        # By typing "-a" the user wants to check the video before playing it
+        if "-a" in args:
+            query = query.replace(" -a", "")
+            ask = True
+
+        await self.search_song_on_yt(ctx, query, ask)
