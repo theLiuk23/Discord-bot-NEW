@@ -6,6 +6,7 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 
 import asyncio
+import datetime
 import discord
 from discord.ext import commands
 import youtube_dl
@@ -55,7 +56,7 @@ class MusicCog(commands.Cog):
             video = yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
             song_info = {'source': video['formats'][0]['url'], 'title': video['title'],
                             'duration': video['duration'], 'channel': video['channel']}
-            await ctx.send(f"I found {song_info['title']} by {song_info['channel']}. It lasts {song_info['duration']} seconds.") # TODO: seconds to minutes!
+            await ctx.send(f"I found **{song_info['title']}**\nBy **{song_info['channel']}**\nIt lasts **{song_info['duration']} seconds**.") # TODO: seconds to minutes!
             if ask:
                 if await self.ask_video(ctx) is False:
                     return
@@ -110,3 +111,9 @@ class MusicCog(commands.Cog):
             ask = True
 
         await self.search_song_on_yt(ctx, query, ask)
+
+
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        print("Bot is now ONLINE", datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'))
