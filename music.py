@@ -48,19 +48,26 @@ class MusicCog(commands.Cog):
             raise commands.ChannelNotFound("Bot is not connected to a voice channel.")
         await self.voice_channel.disconnect()
         self.voice_channel = None
-        self.queue = None
+        self.queue = []
         self.is_playing = False
 
 
 
-    async def ask_video(self, ctx, song_info) -> bool:
-        await ctx.send(f"I found **{song_info['title']}**\nBy **{song_info['channel']}**\nIt lasts **{song_info['duration']} seconds**.") # TODO: seconds to minutes!
+    async def ask_video(self, ctx) -> bool:
         await ctx.send("I found this video. Should I go ahead? [y/n]")
         while True:
             message = await self.bot.wait_for("message", check=lambda m: m.content == "y" or m.content == "n")
             if message.content == "y":
                 return True
             return False
+
+
+    async def send_song_info(self, ctx, info):
+        embed = discord.Embed(title="Search result")
+        embed.add_field(name = "Title", value = info['title'])
+        embed.add_field(name = "Channel", value = info['channel'])
+        embed.add_field(name = "Duration", value = str(info['duration']) + ' seconds') # TODO: convert in minutes
+        await ctx.send(embed=embed)
 
 
     async def choose_video(self, ctx, query, video):
@@ -76,14 +83,14 @@ class MusicCog(commands.Cog):
 
     async def search_song_on_yt(self, ctx, query:str, ask:bool, multiple:bool) -> bool:
         with youtube_dl.YoutubeDL(self.YDL_OPTIONS) as yt_dl:
-            print("ytsearch:%s" % query)
             video = yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
             song_info = {'source': video['formats'][0]['url'],
                         'title': video['title'],
                         'duration': video['duration'],
                         'channel': video['channel']}
             if multiple:
-                await self.choose_video(ctx, query, video)
+                await self.choose_video(ctx, query)
+            await self.send_song_info(ctx, song_info)
             if ask:
                 if await self.ask_video(ctx, song_info) is False:
                     return
@@ -99,7 +106,8 @@ class MusicCog(commands.Cog):
         try:
             fut.result()
         except:
-            raise discord.errors.DiscordServerError("There was a problem playing next song.")
+            fut.cancel()
+            # raise discord.errors.DiscordServerError("There was a problem playing next song.", "message")
 
 
     async def play(self):
@@ -126,7 +134,7 @@ class MusicCog(commands.Cog):
         multiple = False
 
         if ctx.author.voice is None:
-            raise commands.MissingRequiredArgument("User not connected to a voice channel", ctx.author.voice)
+            raise commands.ChannelNotFound("User not connected to a voice channel", ctx.author.voice)
         if self.voice_channel is None:
             await self.connect_to_voice_channel(ctx, ctx.author.voice)
         if len(args) == 0:
@@ -145,19 +153,29 @@ class MusicCog(commands.Cog):
         await self.search_song_on_yt(ctx, query, ask, multiple)
 
 
+    @commands.command(name="skip")
+    async def skip(self, ctx):
+        if self.voice_channel is None:
+            raise commands.ChannelNotFound("The bot is not connected to a voice channel.")
+        if len(self.queue) <= 0:
+            await self.disconnect_from_voice_channel()
+            await ctx.send("There are no other songs in the queue.")
+            return
+        self.voice_channel.stop()
+        await self.play()
+
+
     @commands.command(name="next")
     async def next(self, ctx):
-        print("next")
         songs = []
         for i, song in enumerate(self.queue):
             songs.append(song[i]['title'])
-        print("sending")
         await ctx.send("Here's a list of the songs in the music queue:\n" + "\n".join(songs))
 
 
     @commands.command(name="stop")
     async def stop(self, ctx):
-        await ctx.send(f"Disconnecting from {self.voice_channel.name} voice channel")
+        await ctx.send(f'Disconnecting from "{self.voice_channel.channel}" voice channel')
         await self.disconnect_from_voice_channel()
 
 
@@ -179,7 +197,8 @@ class MusicCog(commands.Cog):
             await ctx.send(f'The input of the argument is invalid.')
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send(f'A required argument is missing.')
+        elif isinstance(error, commands.ChannelNotFound):
+            await ctx.send("The bot is not connected to a voice channel.")
         else:
-            await ctx.send('Unexpected error.')
             print(error)
-        
+            await ctx.send('Unexpected error.')

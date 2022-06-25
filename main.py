@@ -62,7 +62,7 @@ def download_ffmpeg():
     try:
         subprocess.check_output(['which', 'ffmpeg'])
     except subprocess.CalledProcessError:
-        return os.system("sudo apt install ffmpeg")
+        return os.system("sudo apt install ffmpeg -y")
 
 
 
