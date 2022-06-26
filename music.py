@@ -6,11 +6,14 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 
 import asyncio
-import json
+import time
 import datetime
 import discord
 import youtube_dl
+import math
+import exceptions
 from discord.ext import commands
+from discord.ext import tasks
 
 
 class MusicCog(commands.Cog):
@@ -19,8 +22,10 @@ class MusicCog(commands.Cog):
         self.prefix = prefix
         self.volume = 1.0
         self.queue = []
+        self.now_playing = None
         self.is_playing = False
         self.voice_channel = None
+        self.last_song_time = None
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn' }
@@ -30,6 +35,23 @@ class MusicCog(commands.Cog):
             'noplaylist': 'True',
             'nowarnings': 'True',
             'quiet': 'True' }
+
+
+    @tasks.loop(seconds=15)
+    async def check_members(self):
+        if self.voice_channel is None:
+            return
+        if len(self.voice_channel.channel.members) <= 1:
+            await self.disconnect_from_voice_channel()
+
+
+    @tasks.loop(seconds=15)
+    async def check_is_playing(self):
+        if self.voice_channel is None:
+            return
+        if not self.voice_channel.is_playing():
+            await self.disconnect_from_voice_channel()
+
 
 
     async def connect_to_voice_channel(self, ctx, voice) -> bool:
@@ -43,9 +65,9 @@ class MusicCog(commands.Cog):
 
     async def disconnect_from_voice_channel(self) -> bool:
         if self.voice_channel is None:
-            raise commands.ChannelNotFound("Bot is not connected to a voice channel.")
+            raise commands.ChannelNotFound("Bot")
         if self.voice_channel.is_connected() is False:
-            raise commands.ChannelNotFound("Bot is not connected to a voice channel.")
+            raise commands.ChannelNotFound("Bot")
         await self.voice_channel.disconnect()
         self.voice_channel = None
         self.queue = []
@@ -66,15 +88,17 @@ class MusicCog(commands.Cog):
         embed = discord.Embed(title="Search result")
         embed.add_field(name = "Title", value = info['title'])
         embed.add_field(name = "Channel", value = info['channel'])
-        embed.add_field(name = "Duration", value = str(info['duration']) + ' seconds') # TODO: convert in minutes
-        await ctx.send(embed=embed)
+        embed.add_field(name = "Duration", value = time.strftime('%H:%M:%S', time.gmtime(info['duration'])))
+        await ctx.send(embed = embed)
 
 
     async def choose_video(self, ctx, query, video):
-        videos = []
         with youtube_dl.YoutubeDL(self.YDL_OPTIONS) as yt_dl:
-            for i in range(0, 5):
-                videos.append(yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][0])
+            videos = yt_dl.extract_info("ytsearch:%s" % query, download=False)
+
+        print(len(videos['entries']))
+        for item in videos['entries'][0]:
+            print(item)
         # for video in videos:
         #     title = video['title']
         #     channel = video['channel']
@@ -88,13 +112,16 @@ class MusicCog(commands.Cog):
                         'title': video['title'],
                         'duration': video['duration'],
                         'channel': video['channel']}
+            if song_info['duration'] > 3600:
+                raise exceptions.TooLongVideo(song_info['title'], time.strftime('%H:%M:%S', time.gmtime(song_info['duration'])))
             if multiple:
-                await self.choose_video(ctx, query)
+                await self.choose_video(ctx, query, video)
             await self.send_song_info(ctx, song_info)
             if ask:
-                if await self.ask_video(ctx, song_info) is False:
+                if await self.ask_video(ctx) is False:
                     return
             self.queue.append([song_info, ctx.author.voice.channel])
+            await ctx.send("Added to the queue successfully!")
             if self.is_playing is False:
                 await self.play()
             return True
@@ -107,7 +134,6 @@ class MusicCog(commands.Cog):
             fut.result()
         except:
             fut.cancel()
-            # raise discord.errors.DiscordServerError("There was a problem playing next song.", "message")
 
 
     async def play(self):
@@ -116,11 +142,13 @@ class MusicCog(commands.Cog):
             return
 
         source = self.queue[0][0]['source']
+        self.now_playing = self.queue[0]
         self.queue.pop(0)
         if self.voice_channel is None or self.voice_channel.is_connected() is False:
-            raise discord.errors.ClientException("The bot is not connected to a voice channel.")
+            raise commands.ChannelNotFound("Bot")
         if self.voice_channel.is_playing() is False:
             self.voice_channel.play(discord.FFmpegPCMAudio(source, **self.FFMPEG_OPTIONS), after = self.my_after)
+            self.last_song_time = datetime.datetime.now()
         self.voice_channel.source = discord.PCMVolumeTransformer(self.voice_channel.source, volume=self.volume)
         self.is_playing = True
 
@@ -134,21 +162,21 @@ class MusicCog(commands.Cog):
         multiple = False
 
         if ctx.author.voice is None:
-            raise commands.ChannelNotFound("User not connected to a voice channel", ctx.author.voice)
+            raise commands.ChannelNotFound("User")
         if self.voice_channel is None:
             await self.connect_to_voice_channel(ctx, ctx.author.voice)
         if len(args) == 0:
-            raise discord.errors.InvalidArgument("No arguments were provided.", "song name")
+            raise commands.MissingRequiredArgument("song name")
 
         # By typing "-a" the user wants to check the video before playing it
         if "-a" in args:
             query = query.replace(" -a", "")
             ask = True
 
-        # By typing "-m" the user wants to choose among 5 results
-        if "-m" in args:
-            query = query.replace(" -m", "")
-            multiple = True
+        # By typing "-m" the user wants to choose among 5 results # TODO
+        # if "-m" in args:
+        #     query = query.replace(" -m", "")
+        #     multiple = True
 
         await self.search_song_on_yt(ctx, query, ask, multiple)
 
@@ -156,13 +184,30 @@ class MusicCog(commands.Cog):
     @commands.command(name="skip")
     async def skip(self, ctx):
         if self.voice_channel is None:
-            raise commands.ChannelNotFound("The bot is not connected to a voice channel.")
+            raise commands.ChannelNotFound("Bot")
         if len(self.queue) <= 0:
             await self.disconnect_from_voice_channel()
             await ctx.send("There are no other songs in the queue.")
             return
         self.voice_channel.stop()
         await self.play()
+
+
+    @commands.command(name="np")
+    async def np(self, ctx):
+        if self.last_song_time is None:
+            raise exceptions.BotIsNotPlaying()
+        if self.now_playing is None:
+            raise exceptions.BotIsNotPlaying()
+        now = datetime.datetime.now()
+        song = self.now_playing[0]
+        embed = discord.Embed(title="**Now playing**")
+        embed.add_field(name="Title", value=song['title'])
+        embed.add_field(name="Channel", value=song['channel'], inline=False)
+        embed.add_field(name="Duration", value=time.strftime('%H:%M:%S', time.gmtime(song['duration'])), inline=False)
+        # TODO
+        embed.add_field(name="Time Stamp", value=time.strftime('%H:%M:%S', time.gmtime(int((now-self.last_song_time).total_seconds()))) + "(" + str((now-self.last_song_time).total_seconds() / self.now_playing) + "%)", inline=False)
+        await ctx.send(embed=embed)
 
 
     @commands.command(name="next")
@@ -179,10 +224,20 @@ class MusicCog(commands.Cog):
         await self.disconnect_from_voice_channel()
 
 
+
+
+
+
+
+
+
     @commands.Cog.listener()
     async def on_ready(self):
+        if not self.check_is_playing.is_running():
+            self.check_is_playing.start()
+        if not self.check_members.is_running():
+            self.check_members.start()
         print("Bot is now ONLINE", datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'))
-
 
     
     @commands.Cog.listener()
@@ -193,12 +248,14 @@ class MusicCog(commands.Cog):
             await ctx.send(f'The command is on cooldown. Wait {error.retry_after:.2f} seconds.')
         elif isinstance(error, youtube_dl.DownloadError):
             await ctx.send(f'There is a unexpected error during the download of the song.')
-        elif isinstance(error, discord.errors.InvalidArgument):
-            await ctx.send(f'The input of the argument is invalid.')
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f'A required argument is missing.')
+            await ctx.send(f'A required argument is missing. ' + error.param)
         elif isinstance(error, commands.ChannelNotFound):
-            await ctx.send("The bot is not connected to a voice channel.")
+            await ctx.send(f"The {error.argument} is not connected to a voice channel.")
+        elif isinstance(error, exceptions.TooLongVideo):
+            await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
+        elif isinstance(error, discord.errors.Forbidden):
+            await ctx.send("Error 403. The song could not be downloaded. Try again.")
         else:
             print(error)
             await ctx.send('Unexpected error.')
