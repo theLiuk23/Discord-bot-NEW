@@ -9,10 +9,10 @@ import asyncio
 import time
 import datetime
 import discord
-from numpy import percentile
 import youtube_dl
-import math
 import exceptions
+import configparser
+import os, sys
 from discord.ext import commands
 from discord.ext import tasks
 
@@ -27,6 +27,7 @@ class MusicCog(commands.Cog):
         self.is_playing = False
         self.voice_channel = None
         self.last_song_time = None
+        self.count1, self.count2 = 0, 0
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn' }
@@ -38,12 +39,15 @@ class MusicCog(commands.Cog):
             'quiet': 'True' }
 
 
-    # TODO: add attempts
     @tasks.loop(seconds=5)
     async def check_members(self):
         if self.voice_channel is None:
             return
         if len(self.voice_channel.channel.members) <= 1:
+            self.count1 += 1
+        else:
+            self.count1 = 0
+        if self.count1 >= 3:   
             await self.disconnect_from_voice_channel()
 
 
@@ -51,7 +55,11 @@ class MusicCog(commands.Cog):
     async def check_is_playing(self):
         if self.voice_channel is None:
             return
-        if not self.voice_channel.is_playing():
+        if not self.voice_channel.is_playing() and not self.voice_channel.is_paused():
+            self.count2 += 1
+        else:
+            self.count2 = 0
+        if self.count2 >= 3:
             await self.disconnect_from_voice_channel()
 
 
@@ -117,8 +125,6 @@ class MusicCog(commands.Cog):
                         'thumbnails': video['thumbnails'],
                         'views': video['view_count'],
                         'url': video['webpage_url']}
-            for info in video:
-                print(info)
             if song_info['duration'] > 3600:
                 raise exceptions.TooLongVideo(song_info['title'], time.strftime('%H:%M:%S', time.gmtime(song_info['duration'])))
             if multiple:
@@ -158,6 +164,13 @@ class MusicCog(commands.Cog):
             self.last_song_time = datetime.datetime.now()
         self.voice_channel.source = discord.PCMVolumeTransformer(self.voice_channel.source, volume=self.volume)
         self.is_playing = True
+
+
+    async def reload_bot(self, ctx):
+        await ctx.send("The bot is now relaoding.")
+        await self.bot.close()
+        os.execv(sys.executable, ['python3'] + ['main.py'])
+
 
 
 
@@ -223,6 +236,8 @@ class MusicCog(commands.Cog):
 
     @commands.command(name="next")
     async def next(self, ctx):
+        if len(self.queue) <= 0:
+            raise exceptions.QueueIsEmpty()
         songs = []
         for i, song in enumerate(self.queue):
             songs.append(song[i]['title'])
@@ -235,9 +250,51 @@ class MusicCog(commands.Cog):
         await self.disconnect_from_voice_channel()
 
 
+    @commands.command(name="offline")
+    @commands.is_owner()
+    async def offline(self, ctx):
+        await self.disconnect_from_voice_channel()
+        await self.bot.close()
 
 
+    @commands.command(name="pause")
+    async def pause(self, ctx):
+        if self.voice_channel is None:
+            raise commands.ChannelNotFound("Bot")
+        if not self.voice_channel.is_playing():
+            raise exceptions.BotIsNotPlaying()
+        self.voice_channel.pause()
+        await ctx.send('Music paused.')
 
+
+    @commands.command(name="resume")
+    async def resume(self, ctx):
+        if self.voice_channel is None:
+            raise commands.ChannelNotFound("Bot")
+        if self.voice_channel.is_playing():
+            raise exceptions.BotIsAlreadyPlaying()
+        self.voice_channel.resume()
+        await ctx.send('Music resumed.')
+
+
+    @commands.command(name="prefix")
+    async def prefix(self, ctx, *args):
+        if len(args) == 0:
+            raise commands.MissingRequiredArgument("You need to specify a new prefix.")
+        if len(args) >= 2:
+            raise commands.BadArgument("This function needs only one argument.")
+        new_prefix = "".join(args)
+        if len(new_prefix) >= 2:
+            raise commands.BadArgument("The prefix must be a single character.")
+        if new_prefix == self.prefix:
+            raise commands.BadArgument("New prefix is the same as the old one.")
+        cp = configparser.RawConfigParser()
+        cp.read("settings.ini")
+        cp.set("variables", "prefix", new_prefix)
+        with open("settings.ini", "w") as save:
+            cp.write(save)
+        await ctx.send(f'I changed the bot prefix to {new_prefix}.')
+        await self.reload_bot(ctx)
 
 
 
@@ -267,6 +324,13 @@ class MusicCog(commands.Cog):
             await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
         elif isinstance(error, discord.errors.Forbidden):
             await ctx.send("Error 403. The song could not be downloaded. Try again.")
+        elif isinstance(error, exceptions.BotIsAlreadyPlaying):
+            await ctx.send("Bot is already playing some music.")
+        elif isinstance(error, exceptions.BotIsNotPlaying):
+            await ctx.send("Bot is not playing some music at the moment.")
+        elif isinstance(error, exceptions.QueueIsEmpty):
+            await ctx.send(f'There are no songs in the music queue.')
         else:
             print(error)
             await ctx.send('Unexpected error.')
+            await self.reload_bot()
