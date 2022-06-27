@@ -9,6 +9,7 @@ import asyncio
 import time
 import datetime
 import discord
+from numpy import percentile
 import youtube_dl
 import math
 import exceptions
@@ -37,7 +38,8 @@ class MusicCog(commands.Cog):
             'quiet': 'True' }
 
 
-    @tasks.loop(seconds=15)
+    # TODO: add attempts
+    @tasks.loop(seconds=5)
     async def check_members(self):
         if self.voice_channel is None:
             return
@@ -45,7 +47,7 @@ class MusicCog(commands.Cog):
             await self.disconnect_from_voice_channel()
 
 
-    @tasks.loop(seconds=15)
+    @tasks.loop(seconds=5)
     async def check_is_playing(self):
         if self.voice_channel is None:
             return
@@ -111,7 +113,12 @@ class MusicCog(commands.Cog):
             song_info = {'source': video['formats'][0]['url'],
                         'title': video['title'],
                         'duration': video['duration'],
-                        'channel': video['channel']}
+                        'channel': video['channel'],
+                        'thumbnails': video['thumbnails'],
+                        'views': video['view_count'],
+                        'url': video['webpage_url']}
+            for info in video:
+                print(info)
             if song_info['duration'] > 3600:
                 raise exceptions.TooLongVideo(song_info['title'], time.strftime('%H:%M:%S', time.gmtime(song_info['duration'])))
             if multiple:
@@ -201,12 +208,16 @@ class MusicCog(commands.Cog):
             raise exceptions.BotIsNotPlaying()
         now = datetime.datetime.now()
         song = self.now_playing[0]
-        embed = discord.Embed(title="**Now playing**")
-        embed.add_field(name="Title", value=song['title'])
-        embed.add_field(name="Channel", value=song['channel'], inline=False)
-        embed.add_field(name="Duration", value=time.strftime('%H:%M:%S', time.gmtime(song['duration'])), inline=False)
-        # TODO
-        embed.add_field(name="Time Stamp", value=time.strftime('%H:%M:%S', time.gmtime(int((now-self.last_song_time).total_seconds()))) + "(" + str((now-self.last_song_time).total_seconds() / self.now_playing) + "%)", inline=False)
+        time_stamp = time.strftime("%H:%M:%S", time.gmtime((now - self.last_song_time).total_seconds()))
+        percentage = round((now - self.last_song_time).total_seconds() / song['duration'] * 100, 1)
+        embed = discord.Embed(title="__**Now playing**__")
+        embed.set_image(url=song['thumbnails'][-1]['url'])
+        embed.add_field(name="Title", value=song['title'], inline = True)
+        embed.add_field(name="Channel", value=song['channel'], inline = True)
+        embed.add_field(name="Views", value=f"{song['views']:,}", inline = True)
+        embed.add_field(name="Time Stamp", value=f'{time_stamp} ({percentage}%)', inline = True)
+        embed.add_field(name="Duration", value=time.strftime('%H:%M:%S', time.gmtime(song['duration'])), inline = True)
+        embed.add_field(name="Link", value=f"[YouTube]({song['url']})")
         await ctx.send(embed=embed)
 
 
