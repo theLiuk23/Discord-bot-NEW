@@ -6,6 +6,9 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 
 import asyncio
+import itertools
+import json
+from operator import index
 import time
 import datetime
 import discord
@@ -28,6 +31,7 @@ class MusicCog(commands.Cog):
         self.voice_channel = None
         self.last_song_time = None
         self.count1, self.count2 = 0, 0
+        self.playlists = []
         self.FFMPEG_OPTIONS = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn' }
@@ -94,8 +98,8 @@ class MusicCog(commands.Cog):
             return False
 
 
-    async def send_song_info(self, ctx, info):
-        embed = discord.Embed(title="Search result")
+    async def send_song_info(self, ctx, query, info):
+        embed = discord.Embed(title=f"Search result of: {query}")
         embed.add_field(name = "Title", value = info['title'])
         embed.add_field(name = "Channel", value = info['channel'])
         embed.add_field(name = "Duration", value = time.strftime('%H:%M:%S', time.gmtime(info['duration'])))
@@ -115,7 +119,7 @@ class MusicCog(commands.Cog):
         #     await ctx.send(f'{title} by {channel}')
 
 
-    async def search_song_on_yt(self, ctx, query:str, ask:bool, multiple:bool) -> bool:
+    async def search_song_on_yt(self, ctx, query:str, ask:bool=False, multiple:bool=False) -> bool:
         with youtube_dl.YoutubeDL(self.YDL_OPTIONS) as yt_dl:
             video = yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
             song_info = {'source': video['formats'][0]['url'],
@@ -124,12 +128,12 @@ class MusicCog(commands.Cog):
                         'channel': video['channel'],
                         'thumbnails': video['thumbnails'],
                         'views': video['view_count'],
-                        'url': video['webpage_url']}
+                        'url': video['webpage_url'],}
             if song_info['duration'] > 3600:
                 raise exceptions.TooLongVideo(song_info['title'], time.strftime('%H:%M:%S', time.gmtime(song_info['duration'])))
             if multiple:
                 await self.choose_video(ctx, query, video)
-            await self.send_song_info(ctx, song_info)
+            await self.send_song_info(ctx, query, song_info)
             if ask:
                 if await self.ask_video(ctx) is False:
                     return
@@ -160,7 +164,7 @@ class MusicCog(commands.Cog):
         if self.voice_channel is None or self.voice_channel.is_connected() is False:
             raise commands.ChannelNotFound("Bot")
         if self.voice_channel.is_playing() is False:
-            self.voice_channel.play(discord.FFmpegPCMAudio(source, **self.FFMPEG_OPTIONS), after = self.my_after)
+            self.voice_channel.play(discord.FFmpegPCMAudio(source, **self.FFMPEG_OPTIONS), after=self.my_after)
             self.last_song_time = datetime.datetime.now()
         self.voice_channel.source = discord.PCMVolumeTransformer(self.voice_channel.source, volume=self.volume)
         self.is_playing = True
@@ -170,6 +174,39 @@ class MusicCog(commands.Cog):
         await ctx.send("The bot is now relaoding.")
         await self.bot.close()
         os.execv(sys.executable, ['python3'] + ['main.py'])
+
+
+    async def save_playlist(self, ctx, pl_name):
+        queue = list(self.queue) # copy of original queue
+        queue.insert(0, self.now_playing)
+        config = configparser.RawConfigParser()
+        config.read(f'playlists/{pl_name}.ini')
+        
+        with open(f'playlists/{pl_name}.ini', 'w') as file:
+            for index, song in enumerate(queue):
+                config.add_section(f'song{index}')
+                for key in song[0]:
+                    config.set(f'song{index}', key, song[0][key])
+            config.write(file)
+
+
+
+
+    async def load_playlists(self):
+        for file in os.listdir("playlists"):
+            self.playlists.append(file.replace(".ini", ""))
+
+
+    async def playlist_to_queue(self, ctx, pl_name):
+        config = configparser.RawConfigParser()
+        config.read(f'playlists/{pl_name}.ini')
+        with open(f'playlists/{pl_name}.ini', 'r'):
+            for song in config.sections():
+                await self.search_song_on_yt(ctx, config.get(song, 'title'))
+                if self.is_playing is False:
+                    await self.play()
+
+
 
 
 
@@ -185,7 +222,7 @@ class MusicCog(commands.Cog):
             raise commands.ChannelNotFound("User")
         if self.voice_channel is None:
             await self.connect_to_voice_channel(ctx, ctx.author.voice)
-        if len(args) == 0:
+        if len(args) <= 0:
             raise commands.MissingRequiredArgument("song name")
 
         # By typing "-a" the user wants to check the video before playing it
@@ -199,6 +236,25 @@ class MusicCog(commands.Cog):
         #     multiple = True
 
         await self.search_song_on_yt(ctx, query, ask, multiple)
+
+
+    @commands.cooldown(1, 5, commands.BucketType.guild)
+    @commands.command(name="pl")
+    async def pl(self, ctx, *args):
+        pl_name = " ".join(args)
+        if len(args) <= 0:
+            commands.MissingRequiredArgument("Playlist name")
+        if ctx.author.voice is None:
+            raise commands.ChannelNotFound("User")
+        if self.voice_channel is None:
+            await self.connect_to_voice_channel(ctx, ctx.author.voice)
+        if pl_name not in self.playlists:
+            raise exceptions.PlaylistNotFound(pl_name)
+        
+        await self.playlist_to_queue(ctx, pl_name)
+
+        
+    
 
 
     @commands.command(name="skip")
@@ -247,13 +303,15 @@ class MusicCog(commands.Cog):
     @commands.command(name="stop")
     async def stop(self, ctx):
         await ctx.send(f'Disconnecting from "{self.voice_channel.channel}" voice channel')
-        await self.disconnect_from_voice_channel()
+        if self.voice_channel is not None:
+           await self.disconnect_from_voice_channel()
 
 
     @commands.command(name="offline")
     @commands.is_owner()
     async def offline(self, ctx):
-        await self.disconnect_from_voice_channel()
+        if self.voice_channel is not None:
+            await self.disconnect_from_voice_channel()
         await self.bot.close()
 
 
@@ -279,8 +337,8 @@ class MusicCog(commands.Cog):
 
     @commands.command(name="prefix")
     async def prefix(self, ctx, *args):
-        if len(args) == 0:
-            raise commands.MissingRequiredArgument("You need to specify a new prefix.")
+        if len(args) <= 0:
+            raise commands.MissingRequiredArgument("New prefix.")
         if len(args) >= 2:
             raise commands.BadArgument("This function needs only one argument.")
         new_prefix = "".join(args)
@@ -297,10 +355,22 @@ class MusicCog(commands.Cog):
         await self.reload_bot(ctx)
 
 
+    @commands.command(name="newpl")
+    async def newpl(self, ctx, *args):
+        if len(args) <= 0:
+            raise commands.MissingRequiredArgument("Name of the playlist.")
+
+        await self.save_playlist(ctx, "_".join(args))
+        await self.load_playlists()
+
+
+
+
 
 
     @commands.Cog.listener()
     async def on_ready(self):
+        await self.load_playlists()
         if not self.check_is_playing.is_running():
             self.check_is_playing.start()
         if not self.check_members.is_running():
@@ -333,4 +403,4 @@ class MusicCog(commands.Cog):
         else:
             print(error)
             await ctx.send('Unexpected error.')
-            await self.reload_bot()
+            await self.reload_bot(ctx)

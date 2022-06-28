@@ -20,3 +20,8 @@ class BotIsAlreadyPlaying(commands.CheckFailure):
 class QueueIsEmpty(commands.CheckFailure):
     def __init__(self):
         super().__init__(f'There are no songs in the music queue.')
+
+
+class PlaylistNotFound(commands.CheckFailure):
+    def __init__(self, pl_name):
+        super().__init__(f'There is no playlist called {pl_name}')
