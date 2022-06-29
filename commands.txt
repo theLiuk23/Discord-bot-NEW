@@ -1,0 +1,12 @@
+next
+pause
+skip
+help
+pl
+np
+p
+resume
+prefix
+offline
+stop
+newpl

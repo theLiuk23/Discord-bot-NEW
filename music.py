@@ -6,9 +6,6 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 
 import asyncio
-import itertools
-import json
-from operator import index
 import time
 import datetime
 import discord
@@ -185,8 +182,7 @@ class MusicCog(commands.Cog):
         with open(f'playlists/{pl_name}.ini', 'w') as file:
             for index, song in enumerate(queue):
                 config.add_section(f'song{index}')
-                for key in song[0]:
-                    config.set(f'song{index}', key, song[0][key])
+                config.set(f'song{index}', 'title', song[0]['title'])
             config.write(file)
 
 
@@ -195,6 +191,7 @@ class MusicCog(commands.Cog):
     async def load_playlists(self):
         for file in os.listdir("playlists"):
             self.playlists.append(file.replace(".ini", ""))
+
 
 
     async def playlist_to_queue(self, ctx, pl_name):
@@ -336,7 +333,7 @@ class MusicCog(commands.Cog):
 
 
     @commands.command(name="prefix")
-    async def prefix(self, ctx, *args):
+    async def change_prefix(self, ctx, *args):
         if len(args) <= 0:
             raise commands.MissingRequiredArgument("New prefix.")
         if len(args) >= 2:
@@ -362,6 +359,12 @@ class MusicCog(commands.Cog):
 
         await self.save_playlist(ctx, "_".join(args))
         await self.load_playlists()
+
+
+    @commands.command(name="help")
+    async def help(self, ctx, *args):
+        await ctx.send("Here's a link to my GitHub page: https://github.com/theLiuk23/Discord-bot-NEW")
+
 
 
 
