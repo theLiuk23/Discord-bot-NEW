@@ -6,6 +6,7 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 
 import asyncio
+import inspect
 import time
 import datetime
 import discord
@@ -220,7 +221,7 @@ class MusicCog(commands.Cog):
         if self.voice_channel is None:
             await self.connect_to_voice_channel(ctx, ctx.author.voice)
         if len(args) <= 0:
-            raise commands.MissingRequiredArgument("song name")
+            raise commands.MissingRequiredArgument(inspect.Parameter("query", inspect._ParameterKind.KEYWORD_ONLY))
 
         # By typing "-a" the user wants to check the video before playing it
         if "-a" in args:
@@ -240,7 +241,7 @@ class MusicCog(commands.Cog):
     async def pl(self, ctx, *args):
         pl_name = " ".join(args)
         if len(args) <= 0:
-            commands.MissingRequiredArgument("Playlist name")
+            commands.MissingRequiredArgument(inspect.Parameter("playlist name", inspect._ParameterKind.KEYWORD_ONLY))
         if ctx.author.voice is None:
             raise commands.ChannelNotFound("User")
         if self.voice_channel is None:
@@ -335,7 +336,7 @@ class MusicCog(commands.Cog):
     @commands.command(name="prefix")
     async def change_prefix(self, ctx, *args):
         if len(args) <= 0:
-            raise commands.MissingRequiredArgument("New prefix.")
+            raise commands.MissingRequiredArgument(inspect.Parameter("prefix"), inspect._ParameterKind.KEYWORD_ONLY)
         if len(args) >= 2:
             raise commands.BadArgument("This function needs only one argument.")
         new_prefix = "".join(args)
@@ -355,12 +356,13 @@ class MusicCog(commands.Cog):
     @commands.command(name="newpl")
     async def newpl(self, ctx, *args):
         if len(args) <= 0:
-            raise commands.MissingRequiredArgument("Name of the playlist.")
+            raise commands.MissingRequiredArgument(inspect.Parameter("playlist name"), inspect._ParameterKind.KEYWORD_ONLY)
 
         await self.save_playlist(ctx, "_".join(args))
         await self.load_playlists()
 
 
+    # TODO: embed
     @commands.command(name="help")
     async def help(self, ctx, *args):
         await ctx.send("Here's a link to my GitHub page: https://github.com/theLiuk23/Discord-bot-NEW")
@@ -390,7 +392,7 @@ class MusicCog(commands.Cog):
         elif isinstance(error, youtube_dl.DownloadError):
             await ctx.send(f'There is a unexpected error during the download of the song.')
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f'A required argument is missing. ' + error.param)
+            await ctx.send(f'A required argument is missing. ' + error.param.name)
         elif isinstance(error, commands.ChannelNotFound):
             await ctx.send(f"The {error.argument} is not connected to a voice channel.")
         elif isinstance(error, exceptions.TooLongVideo):
