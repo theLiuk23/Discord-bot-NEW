@@ -7,6 +7,7 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 import asyncio
 import inspect
+from socket import timeout
 import time
 import datetime
 import discord
@@ -90,14 +91,19 @@ class MusicCog(commands.Cog):
     async def ask_video(self, ctx) -> bool:
         await ctx.send("I found this video. Should I go ahead? [y/n]")
         while True:
-            message = await self.bot.wait_for("message", check=lambda m: m.content == "y" or m.content == "n")
-            if message.content == "y":
-                return True
-            return False
+            try:
+                message = await self.bot.wait_for("message", check=lambda m: m.content == "y" or m.content == "n", timeout=10)
+                if message.content == "y" or message.content == "yes":
+                    return True
+                return False
+            except asyncio.TimeoutError:
+                await ctx.send("Expired [default = No]")
+                return False
+
 
 
     async def send_song_info(self, ctx, query, info):
-        embed = discord.Embed(title=f"Search result of: {query}")
+        embed = discord.Embed(title=f"Search result of: **{query}**")
         embed.add_field(name = "Title", value = info['title'])
         embed.add_field(name = "Channel", value = info['channel'])
         embed.add_field(name = "Duration", value = time.strftime('%H:%M:%S', time.gmtime(info['duration'])))
@@ -136,7 +142,7 @@ class MusicCog(commands.Cog):
                 if await self.ask_video(ctx) is False:
                     return
             self.queue.append([song_info, ctx.author.voice.channel])
-            await ctx.send("Added to the queue successfully!")
+            # await ctx.send("Added to the queue successfully!")
             if self.is_playing is False:
                 await self.play()
             return True
@@ -218,10 +224,10 @@ class MusicCog(commands.Cog):
 
         if ctx.author.voice is None:
             raise commands.ChannelNotFound("User")
-        if self.voice_channel is None:
-            await self.connect_to_voice_channel(ctx, ctx.author.voice)
-        if len(args) <= 0:
+        elif len(args) <= 0:
             raise commands.MissingRequiredArgument(inspect.Parameter("query", inspect._ParameterKind.KEYWORD_ONLY))
+        elif self.voice_channel is None:
+            await self.connect_to_voice_channel(ctx, ctx.author.voice)
 
         # By typing "-a" the user wants to check the video before playing it
         if "-a" in args:
@@ -241,13 +247,13 @@ class MusicCog(commands.Cog):
     async def pl(self, ctx, *args):
         pl_name = " ".join(args)
         if len(args) <= 0:
-            commands.MissingRequiredArgument(inspect.Parameter("playlist name", inspect._ParameterKind.KEYWORD_ONLY))
-        if ctx.author.voice is None:
+            raise commands.MissingRequiredArgument(inspect.Parameter("playlist_name", inspect._ParameterKind.KEYWORD_ONLY))
+        elif ctx.author.voice is None:
             raise commands.ChannelNotFound("User")
+        elif pl_name not in self.playlists:
+            raise exceptions.PlaylistNotFound(pl_name)
         if self.voice_channel is None:
             await self.connect_to_voice_channel(ctx, ctx.author.voice)
-        if pl_name not in self.playlists:
-            raise exceptions.PlaylistNotFound(pl_name)
         
         await self.playlist_to_queue(ctx, pl_name)
 
@@ -336,7 +342,7 @@ class MusicCog(commands.Cog):
     @commands.command(name="prefix")
     async def change_prefix(self, ctx, *args):
         if len(args) <= 0:
-            raise commands.MissingRequiredArgument(inspect.Parameter("prefix"), inspect._ParameterKind.KEYWORD_ONLY)
+            raise commands.MissingRequiredArgument(inspect.Parameter("prefix", inspect._ParameterKind.KEYWORD_ONLY))
         if len(args) >= 2:
             raise commands.BadArgument("This function needs only one argument.")
         new_prefix = "".join(args)
@@ -356,7 +362,7 @@ class MusicCog(commands.Cog):
     @commands.command(name="newpl")
     async def newpl(self, ctx, *args):
         if len(args) <= 0:
-            raise commands.MissingRequiredArgument(inspect.Parameter("playlist name"), inspect._ParameterKind.KEYWORD_ONLY)
+            raise commands.MissingRequiredArgument(inspect.Parameter("playlist_name", inspect._ParameterKind.KEYWORD_ONLY))
 
         await self.save_playlist(ctx, "_".join(args))
         await self.load_playlists()
@@ -405,6 +411,8 @@ class MusicCog(commands.Cog):
             await ctx.send("Bot is not playing some music at the moment.")
         elif isinstance(error, exceptions.QueueIsEmpty):
             await ctx.send(f'There are no songs in the music queue.')
+        elif isinstance(error, exceptions.PlaylistNotFound):
+            await ctx.send(f'There is no playlist named: {error.pl_name}')
         else:
             print(error)
             await ctx.send('Unexpected error.')

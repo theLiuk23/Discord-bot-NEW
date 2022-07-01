@@ -24,4 +24,5 @@ class QueueIsEmpty(commands.CheckFailure):
 
 class PlaylistNotFound(commands.CheckFailure):
     def __init__(self, pl_name):
+        self.pl_name = pl_name
         super().__init__(f'There is no playlist called {pl_name}')
