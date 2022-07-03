@@ -196,6 +196,7 @@ class MusicCog(commands.Cog):
 
 
     async def load_playlists(self):
+        self.playlists = []
         for file in os.listdir("playlists"):
             self.playlists.append(file.replace(".ini", ""))
 
@@ -247,11 +248,13 @@ class MusicCog(commands.Cog):
     async def pl(self, ctx, *args):
         pl_name = " ".join(args)
         if len(args) <= 0:
-            raise commands.MissingRequiredArgument(inspect.Parameter("playlist_name", inspect._ParameterKind.KEYWORD_ONLY))
+            await self.load_playlists()
+            await ctx.send("\n".join(self.playlists))
+            return
+        if pl_name not in self.playlists:
+            raise exceptions.PlaylistNotFound(pl_name)
         elif ctx.author.voice is None:
             raise commands.ChannelNotFound("User")
-        elif pl_name not in self.playlists:
-            raise exceptions.PlaylistNotFound(pl_name)
         if self.voice_channel is None:
             await self.connect_to_voice_channel(ctx, ctx.author.voice)
         
