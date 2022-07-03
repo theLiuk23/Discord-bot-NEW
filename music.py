@@ -7,7 +7,6 @@ If you have any question, please write me at ldvcoding@gmail.com
 
 import asyncio
 import inspect
-from socket import timeout
 import time
 import datetime
 import discord
@@ -235,11 +234,6 @@ class MusicCog(commands.Cog):
             query = query.replace(" -a", "")
             ask = True
 
-        # By typing "-m" the user wants to choose among 5 results # TODO
-        # if "-m" in args:
-        #     query = query.replace(" -m", "")
-        #     multiple = True
-
         await self.search_song_on_yt(ctx, query, ask, multiple)
 
 
@@ -261,9 +255,6 @@ class MusicCog(commands.Cog):
         await self.playlist_to_queue(ctx, pl_name)
 
         
-    
-
-
     @commands.command(name="skip")
     async def skip(self, ctx):
         if self.voice_channel is None:
@@ -371,7 +362,6 @@ class MusicCog(commands.Cog):
         await self.load_playlists()
 
 
-    # TODO: embed
     @commands.command(name="help")
     async def help(self, ctx, *args):
         await ctx.send("Here's a link to my GitHub page: https://github.com/theLiuk23/Discord-bot-NEW")
