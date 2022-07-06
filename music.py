@@ -1,6 +1,7 @@
 '''
 This script is the class containing all the commands and the loops handled by the bot.
-To get a list of all the available commands and how they work, please either open the commands.txt file or visit my GitHub Repository at https://github.com/theLiuk23/Discord-music-bot.
+To get a list of all the available commands and how they work,
+please either open the commands.txt file or visit my GitHub Repository at https://github.com/theLiuk23/Discord-music-bot.
 If you have any question, please write me at ldvcoding@gmail.com
 '''
 
@@ -109,19 +110,6 @@ class MusicCog(commands.Cog):
         await ctx.send(embed = embed)
 
 
-    async def choose_video(self, ctx, query, video):
-        with youtube_dl.YoutubeDL(self.YDL_OPTIONS) as yt_dl:
-            videos = yt_dl.extract_info("ytsearch:%s" % query, download=False)
-
-        print(len(videos['entries']))
-        for item in videos['entries'][0]:
-            print(item)
-        # for video in videos:
-        #     title = video['title']
-        #     channel = video['channel']
-        #     await ctx.send(f'{title} by {channel}')
-
-
     async def search_song_on_yt(self, ctx, query:str, ask:bool=False, multiple:bool=False) -> bool:
         with youtube_dl.YoutubeDL(self.YDL_OPTIONS) as yt_dl:
             video = yt_dl.extract_info("ytsearch:%s" % query, download=False)['entries'][0]
@@ -132,7 +120,7 @@ class MusicCog(commands.Cog):
                         'thumbnails': video['thumbnails'],
                         'views': video['view_count'],
                         'url': video['webpage_url'],}
-            if song_info['duration'] > 3600:
+            if song_info['duration'] > 60 * 60 * 2: # limit the duration of the song
                 raise exceptions.TooLongVideo(song_info['title'], time.strftime('%H:%M:%S', time.gmtime(song_info['duration'])))
             if multiple:
                 await self.choose_video(ctx, query, video)
@@ -380,6 +368,17 @@ class MusicCog(commands.Cog):
         if not self.check_members.is_running():
             self.check_members.start()
         print("Bot is now ONLINE", datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'))
+
+
+    @commands.Cog.listener()
+    async def on_disconnect(self):
+        print("disconnecting")
+        self.count1, self.count2 = 0, 0
+        self.voice_channel = None
+        self.queue = []
+        self.is_playing = False
+        self.check_is_playing.stop()
+        self.check_members.stop()
 
     
     @commands.Cog.listener()

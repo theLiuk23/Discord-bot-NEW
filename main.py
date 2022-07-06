@@ -49,7 +49,7 @@ def main():
     token = read_settings("settings.ini", "variables", "bot_token")
     if token is None or prefix is None:
         raise TypeError(f"Either the token or the prefix is NoneType.\nToken: {token}\nPrefix: {prefix}")
-    activity = discord.Activity(type=discord.ActivityType.listening, name=f"music. {prefix}h")
+    activity = discord.Activity(type=discord.ActivityType.listening, name=f"music. {prefix}help")
     client = commands.Bot(command_prefix=prefix, intents=intents, activity=activity, help_command=None)
     client.add_cog(music.MusicCog(client, prefix))
     client.run(token, bot=True)
