@@ -43,6 +43,8 @@ See the avaible commands to know how to use the commands properly.
 9. resume --> It starts playing the song where it was paused
 10. stop --> It disconnects the bot from the voice channel
 11. skip --> It plays the next song in the queue
+12. vol --> It shows the current volume
+13. vol [args] --> It sets a new volume (must be between 0 and 200)(argument needed = volume)
 
 
 ## ADDING THE BOT TO A DISCORD SERVER
