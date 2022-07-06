@@ -20,10 +20,10 @@ from discord.ext import tasks
 
 
 class MusicCog(commands.Cog):
-    def __init__(self, bot, prefix):
+    def __init__(self, bot, prefix, volume):
         self.bot = bot
         self.prefix = prefix
-        self.volume = 1.0
+        self.volume = volume
         self.queue = []
         self.now_playing = None
         self.is_playing = False
@@ -355,6 +355,24 @@ class MusicCog(commands.Cog):
         await ctx.send("Here's a link to my GitHub page: https://github.com/theLiuk23/Discord-bot-NEW")
 
 
+    @commands.command(name="vol")
+    async def vol(self, ctx, *args):
+        if len(args) == 0:
+            await ctx.send(f"Volume is now set to {int(self.volume * 100)}")
+        else:
+            if not str.isdigit(args[0]):
+                raise commands.BadArgument()
+            volume = int(args[0])
+            if volume < 0 or volume > 200:
+                raise commands.BadArgument()
+            self.volume = float(volume / 100)
+            if self.voice_channel is not None:
+                self.voice_channel.source.volume = float(volume / 100)
+        config = configparser.RawConfigParser()
+        config.read("settings.ini")
+        with open("settings.ini", "w") as file:
+            config.set("variables", "volume", str(float(volume / 100)))
+            config.write(file)
 
 
 
@@ -391,6 +409,8 @@ class MusicCog(commands.Cog):
             await ctx.send(f'There is a unexpected error during the download of the song.')
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send(f'A required argument is missing. ' + error.param.name)
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send(f'The provided arguments are not correct. ')
         elif isinstance(error, commands.ChannelNotFound):
             await ctx.send(f"The {error.argument} is not connected to a voice channel.")
         elif isinstance(error, exceptions.TooLongVideo):
