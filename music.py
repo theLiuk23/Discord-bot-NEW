@@ -97,8 +97,7 @@ class MusicCog(commands.Cog):
                     return True
                 return False
             except asyncio.TimeoutError:
-                await ctx.send("Expired [default = No]")
-                return False
+                raise TimeoutError()
 
 
 
@@ -430,6 +429,8 @@ class MusicCog(commands.Cog):
             await ctx.send(f'There are no songs in the music queue.')
         elif isinstance(error, exceptions.PlaylistNotFound):
             await ctx.send(f'There is no playlist named: {error.pl_name}')
+        elif isinstance(error, TimeoutError):
+            await ctx.send("Expired [default = No]")
         else:
             print(str(type(error)) + " - " + str(error))
             await ctx.send('Unexpected error.')
