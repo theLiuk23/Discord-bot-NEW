@@ -103,7 +103,7 @@ class MusicCog(commands.Cog):
 
 
     async def send_song_info(self, ctx, query, info):
-        embed = discord.Embed(title=f"Search result of: **{query}**")
+        embed = discord.Embed(title=f"Search result of: __**{query}**__")
         embed.add_field(name = "Title", value = info['title'])
         embed.add_field(name = "Channel", value = info['channel'])
         embed.add_field(name = "Duration", value = time.strftime('%H:%M:%S', time.gmtime(info['duration'])))
@@ -147,6 +147,8 @@ class MusicCog(commands.Cog):
     async def play(self):
         if len(self.queue) <= 0:
             self.is_playing = False
+            self.now_playing = None
+            self.queue = []
             return
 
         source = self.queue[0][0]['source']
@@ -168,6 +170,8 @@ class MusicCog(commands.Cog):
 
 
     async def save_playlist(self, ctx, pl_name):
+        if self.now_playing is None and len(self.queue) == 0:
+            raise exceptions.QueueIsEmpty()
         queue = list(self.queue) # copy of original queue
         queue.insert(0, self.now_playing)
         config = configparser.RawConfigParser()
@@ -228,10 +232,10 @@ class MusicCog(commands.Cog):
     @commands.cooldown(1, 5, commands.BucketType.guild)
     @commands.command(name="pl")
     async def pl(self, ctx, *args):
-        pl_name = " ".join(args)
+        pl_name = "_".join(args)
         if len(args) <= 0:
             await self.load_playlists()
-            await ctx.send("\n".join(self.playlists))
+            await ctx.send("Here's a list of the saved playlists:\n**" + "\n".join(self.playlists) + "**")
             return
         if pl_name not in self.playlists:
             raise exceptions.PlaylistNotFound(pl_name)
@@ -282,20 +286,22 @@ class MusicCog(commands.Cog):
             raise exceptions.QueueIsEmpty()
         songs = []
         for i, song in enumerate(self.queue):
-            songs.append(song[i]['title'])
+            songs.append(song[0]['title'])
         await ctx.send("Here's a list of the songs in the music queue:\n" + "\n".join(songs))
 
 
     @commands.command(name="stop")
     async def stop(self, ctx):
-        await ctx.send(f'Disconnecting from "{self.voice_channel.channel}" voice channel')
         if self.voice_channel is not None:
-           await self.disconnect_from_voice_channel()
+            await ctx.send(f'Disconnecting from "{self.voice_channel.channel}" voice channel')
+            await self.disconnect_from_voice_channel()
+        else:
+            raise exceptions.BotIsNotPlaying()
 
 
     @commands.command(name="offline")
     @commands.is_owner()
-    async def offline(self, ctx):
+    async def offline(self):
         if self.voice_channel is not None:
             await self.disconnect_from_voice_channel()
         await self.bot.close()
@@ -345,7 +351,6 @@ class MusicCog(commands.Cog):
     async def newpl(self, ctx, *args):
         if len(args) <= 0:
             raise commands.MissingRequiredArgument(inspect.Parameter("playlist_name", inspect._ParameterKind.KEYWORD_ONLY))
-
         await self.save_playlist(ctx, "_".join(args))
         await self.load_playlists()
 
@@ -409,10 +414,10 @@ class MusicCog(commands.Cog):
             await ctx.send(f'There is a unexpected error during the download of the song.')
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.send(f'A required argument is missing. ' + error.param.name)
-        elif isinstance(error, commands.BadArgument):
-            await ctx.send(f'The provided arguments are not correct. ')
         elif isinstance(error, commands.ChannelNotFound):
             await ctx.send(f"The {error.argument} is not connected to a voice channel.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send(f'The provided arguments are not correct.')
         elif isinstance(error, exceptions.TooLongVideo):
             await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
         elif isinstance(error, discord.errors.Forbidden):
@@ -426,6 +431,6 @@ class MusicCog(commands.Cog):
         elif isinstance(error, exceptions.PlaylistNotFound):
             await ctx.send(f'There is no playlist named: {error.pl_name}')
         else:
-            print(error)
+            print(str(type(error)) + " - " + str(error))
             await ctx.send('Unexpected error.')
             await self.reload_bot(ctx)
