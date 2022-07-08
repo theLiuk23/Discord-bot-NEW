@@ -14,6 +14,7 @@ import discord
 import youtube_dl
 import exceptions
 import configparser
+import pywhatkit
 import os, sys
 from discord.ext import commands
 from discord.ext import tasks
@@ -64,6 +65,12 @@ class MusicCog(commands.Cog):
             self.count2 = 0
         if self.count2 >= 3:
             await self.disconnect_from_voice_channel()
+
+
+    async def add_to_error_log(self, error):
+        with open("error_log.txt", "a") as file:
+            time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            file.write(f"{time} - {str(error)}\n")
 
 
 
@@ -409,33 +416,34 @@ class MusicCog(commands.Cog):
     
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        if isinstance(error, commands.CommandNotFound):
-            await ctx.send(f'{ctx.message.content.split(" ")[0]} is not an available command. Type {self.prefix}help to get more information.')
-        elif isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(f'The command is on cooldown. Wait {error.retry_after:.2f} seconds.')
-        elif isinstance(error, youtube_dl.DownloadError):
-            await ctx.send(f'There is a unexpected error during the download of the song.')
-        elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f'A required argument is missing. ' + error.param.name)
-        elif isinstance(error, commands.ChannelNotFound):
-            await ctx.send(f"The {error.argument} is not connected to a voice channel.")
-        elif isinstance(error, commands.BadArgument):
-            await ctx.send(f'The provided arguments are not correct.')
-        elif isinstance(error, exceptions.TooLongVideo):
-            await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
-        elif isinstance(error, discord.errors.Forbidden):
-            await ctx.send("Error 403. The song could not be downloaded. Try again.")
-        elif isinstance(error, exceptions.BotIsAlreadyPlaying):
-            await ctx.send("Bot is already playing some music.")
-        elif isinstance(error, exceptions.BotIsNotPlaying):
-            await ctx.send("Bot is not playing some music at the moment.")
-        elif isinstance(error, exceptions.QueueIsEmpty):
-            await ctx.send(f'There are no songs in the music queue.')
-        elif isinstance(error, exceptions.PlaylistNotFound):
-            await ctx.send(f'There is no playlist named: {error.pl_name}')
-        elif isinstance(error, TimeoutError):
-            await ctx.send("Expired [default = No]")
-        else:
+        # if isinstance(error, commands.CommandNotFound):
+        #     await ctx.send(f'{ctx.message.content.split(" ")[0]} is not an available command. Type {self.prefix}help to get more information.')
+        # elif isinstance(error, commands.CommandOnCooldown):
+        #     await ctx.send(f'The command is on cooldown. Wait {error.retry_after:.2f} seconds.')
+        # elif isinstance(error, youtube_dl.DownloadError):
+        #     await ctx.send(f'There is a unexpected error during the download of the song.')
+        # elif isinstance(error, commands.MissingRequiredArgument):
+        #     await ctx.send(f'A required argument is missing. ' + error.param.name)
+        # elif isinstance(error, commands.ChannelNotFound):
+        #     await ctx.send(f"The {error.argument} is not connected to a voice channel.")
+        # elif isinstance(error, commands.BadArgument):
+        #     await ctx.send(f'The provided arguments are not correct.')
+        # elif isinstance(error, exceptions.TooLongVideo):
+        #     await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
+        # elif isinstance(error, discord.errors.Forbidden):
+        #     await ctx.send("Error 403. The song could not be downloaded. Try again.")
+        # elif isinstance(error, exceptions.BotIsAlreadyPlaying):
+        #     await ctx.send("Bot is already playing some music.")
+        # elif isinstance(error, exceptions.BotIsNotPlaying):
+        #     await ctx.send("Bot is not playing some music at the moment.")
+        # elif isinstance(error, exceptions.QueueIsEmpty):
+        #     await ctx.send(f'There are no songs in the music queue.')
+        # elif isinstance(error, exceptions.PlaylistNotFound):
+        #     await ctx.send(f'There is no playlist named: {error.pl_name}')
+        # elif isinstance(error, TimeoutError):
+        #     await ctx.send("Expired [default = No]")
+        if True:
+            await self.add_to_error_log(error)
             print(str(type(error)) + " - " + str(error))
             await ctx.send('Unexpected error.')
             await self.reload_bot(ctx)
