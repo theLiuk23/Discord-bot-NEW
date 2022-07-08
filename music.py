@@ -300,7 +300,8 @@ class MusicCog(commands.Cog):
 
     @commands.command(name="offline")
     @commands.is_owner()
-    async def offline(self):
+    async def offline(self, ctx):
+        await ctx.send("Going offline! See ya later.")
         if self.voice_channel is not None:
             await self.disconnect_from_voice_channel()
         await self.bot.close()
@@ -356,7 +357,9 @@ class MusicCog(commands.Cog):
 
     @commands.command(name="help")
     async def help(self, ctx, *args):
-        await ctx.send("Here's a link to my GitHub page: https://github.com/theLiuk23/Discord-bot-NEW")
+        embed = discord.Embed(color= discord.Colour.dark_teal())
+        embed.add_field(name='Here\'s a github page containing all the "Music From YT!" bot info:', value='[Music From YT! - github.com](https://github.com/theLiuk23/Discord-bot-NEW)', inline=False)
+        await ctx.send(embed=embed)
 
 
     @commands.command(name="vol")
@@ -370,6 +373,7 @@ class MusicCog(commands.Cog):
             if volume < 0 or volume > 200:
                 raise commands.BadArgument()
             self.volume = float(volume / 100)
+            await ctx.send(f"Volume is now set to {volume}%")
             if self.voice_channel is not None:
                 self.voice_channel.source.volume = float(volume / 100)
         config = configparser.RawConfigParser()
