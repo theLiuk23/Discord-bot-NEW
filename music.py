@@ -14,7 +14,6 @@ import discord
 import youtube_dl
 import exceptions
 import configparser
-import pywhatkit
 import os, sys
 from discord.ext import commands
 from discord.ext import tasks
