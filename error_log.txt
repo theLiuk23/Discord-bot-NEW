@@ -1,0 +1,9 @@
+10/07/2022 12:14:40 - Command raised an exception: UnboundLocalError: local variable 'volume' referenced before assignment
+10/07/2022 12:16:13 - Command raised an exception: UnboundLocalError: local variable 'volume' referenced before assignment
+10/07/2022 12:18:17 - Command raised an exception: UnboundLocalError: local variable 'volume' referenced before assignment
+10/07/2022 12:20:36 - Command raised an exception: TypeError: list indices must be integers or slices, not str
+10/07/2022 13:34:37 - Command raised an exception: TypeError: sequence item 0: expected str instance, list found
+10/07/2022 13:36:27 - Command raised an exception: TypeError: list indices must be integers or slices, not str
+10/07/2022 13:50:41 - Command raised an exception: IndexError: list index out of range
+10/07/2022 14:05:28 - Command raised an exception: IndexError: list index out of range
+10/07/2022 14:10:59 - Command raised an exception: TypeError: save_playlist() missing 1 required positional argument: 'pl_name'

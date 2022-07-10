@@ -24,8 +24,8 @@ class MusicCog(commands.Cog):
         self.bot = bot
         self.prefix = prefix
         self.volume = volume
+        self.old_songs = []
         self.queue = []
-        self.now_playing = None
         self.is_playing = False
         self.voice_channel = None
         self.last_song_time = None
@@ -90,6 +90,7 @@ class MusicCog(commands.Cog):
         await self.voice_channel.disconnect()
         self.voice_channel = None
         self.queue = []
+        self.old_songs = []
         self.is_playing = False
 
 
@@ -150,22 +151,21 @@ class MusicCog(commands.Cog):
 
 
     async def play(self):
+        print("entering play function")
         if len(self.queue) <= 0:
             self.is_playing = False
-            self.now_playing = None
+            self.old_songs = []
             self.queue = []
             return
-
-        source = self.queue[0][0]['source']
-        self.now_playing = self.queue[0]
-        self.queue.pop(0)
         if self.voice_channel is None or self.voice_channel.is_connected() is False:
             raise commands.ChannelNotFound("Bot")
+        source = self.queue[0][0]['source']
+        self.old_songs.append(self.queue.pop(0)) # transfers song item at index 0 from queue to old songs
         if self.voice_channel.is_playing() is False:
+            self.is_playing = True
             self.voice_channel.play(discord.FFmpegPCMAudio(source, **self.FFMPEG_OPTIONS), after=self.my_after)
             self.last_song_time = datetime.datetime.now()
         self.voice_channel.source = discord.PCMVolumeTransformer(self.voice_channel.source, volume=self.volume)
-        self.is_playing = True
 
 
     async def reload_bot(self, ctx):
@@ -175,27 +175,23 @@ class MusicCog(commands.Cog):
 
 
     async def save_playlist(self, ctx, pl_name):
-        if self.now_playing is None and len(self.queue) == 0:
+        if len(self.old_songs) == 0 and len(self.queue) == 0:
             raise exceptions.QueueIsEmpty()
-        queue = list(self.queue) # copy of original queue
-        queue.insert(0, self.now_playing)
+        songs = self.old_songs + self.queue
         config = configparser.RawConfigParser()
         config.read(f'playlists/{pl_name}.ini')
         
         with open(f'playlists/{pl_name}.ini', 'w') as file:
-            for index, song in enumerate(queue):
+            for index, song in enumerate(songs):
                 config.add_section(f'song{index}')
                 config.set(f'song{index}', 'title', song[0]['title'])
             config.write(file)
-
-
 
 
     async def load_playlists(self):
         self.playlists = []
         for file in os.listdir("playlists"):
             self.playlists.append(file.replace(".ini", ""))
-
 
 
     async def playlist_to_queue(self, ctx, pl_name):
@@ -261,17 +257,16 @@ class MusicCog(commands.Cog):
             await ctx.send("There are no other songs in the queue.")
             return
         self.voice_channel.stop()
-        await self.play()
 
 
     @commands.command(name="np")
     async def np(self, ctx):
         if self.last_song_time is None:
             raise exceptions.BotIsNotPlaying()
-        if self.now_playing is None:
+        if len(self.old_songs) is None:
             raise exceptions.BotIsNotPlaying()
         now = datetime.datetime.now()
-        song = self.now_playing[0]
+        song = self.old_songs[-1][0]
         time_stamp = time.strftime("%H:%M:%S", time.gmtime((now - self.last_song_time).total_seconds()))
         percentage = round((now - self.last_song_time).total_seconds() / song['duration'] * 100, 1)
         embed = discord.Embed(title="__**Now playing**__")
@@ -290,7 +285,7 @@ class MusicCog(commands.Cog):
         if len(self.queue) <= 0:
             raise exceptions.QueueIsEmpty()
         songs = []
-        for i, song in enumerate(self.queue):
+        for song in self.queue:
             songs.append(song[0]['title'])
         await ctx.send("Here's a list of the songs in the music queue:\n" + "\n".join(songs))
 
@@ -357,7 +352,10 @@ class MusicCog(commands.Cog):
     async def newpl(self, ctx, *args):
         if len(args) <= 0:
             raise commands.MissingRequiredArgument(inspect.Parameter("playlist_name", inspect._ParameterKind.KEYWORD_ONLY))
-        await self.save_playlist(ctx, "_".join(args))
+        pl_name = "_".join(args)
+        if pl_name in self.playlists:
+            raise exceptions.FileAlreadyExists()
+        await self.save_playlist(ctx, pl_name)
         await self.load_playlists()
 
 
@@ -382,11 +380,26 @@ class MusicCog(commands.Cog):
             await ctx.send(f"Volume is now set to {volume}%")
             if self.voice_channel is not None:
                 self.voice_channel.source.volume = float(volume / 100)
-        config = configparser.RawConfigParser()
-        config.read("settings.ini")
-        with open("settings.ini", "w") as file:
-            config.set("variables", "volume", str(float(volume / 100)))
-            config.write(file)
+
+            config = configparser.RawConfigParser()
+            config.read("settings.ini")
+            with open("settings.ini", "w") as file:
+                config.set("variables", "volume", str(float(volume / 100)))
+                config.write(file)
+
+
+    @commands.is_owner()
+    @commands.command(name="reload")
+    async def reload(self, ctx):
+        await self.reload_bot()
+
+
+    @commands.is_owner()
+    @commands.command(name="debug")
+    async def debug(self, ctx):
+        await ctx.send("**OLD SONGS**: \n" + "\n".join([song[0]['title'] for song in self.old_songs]))
+        await ctx.send("**QUEUE**: \n" + "\n".join([song[0]['title'] for song in self.queue]))
+
 
 
 
@@ -401,48 +414,38 @@ class MusicCog(commands.Cog):
             self.check_members.start()
         print("Bot is now ONLINE", datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'))
 
-
-    @commands.Cog.listener()
-    async def on_disconnect(self):
-        print("disconnecting")
-        self.count1, self.count2 = 0, 0
-        self.voice_channel = None
-        self.queue = []
-        self.is_playing = False
-        self.check_is_playing.stop()
-        self.check_members.stop()
-
     
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        # if isinstance(error, commands.CommandNotFound):
-        #     await ctx.send(f'{ctx.message.content.split(" ")[0]} is not an available command. Type {self.prefix}help to get more information.')
-        # elif isinstance(error, commands.CommandOnCooldown):
-        #     await ctx.send(f'The command is on cooldown. Wait {error.retry_after:.2f} seconds.')
-        # elif isinstance(error, youtube_dl.DownloadError):
-        #     await ctx.send(f'There is a unexpected error during the download of the song.')
-        # elif isinstance(error, commands.MissingRequiredArgument):
-        #     await ctx.send(f'A required argument is missing. ' + error.param.name)
-        # elif isinstance(error, commands.ChannelNotFound):
-        #     await ctx.send(f"The {error.argument} is not connected to a voice channel.")
-        # elif isinstance(error, commands.BadArgument):
-        #     await ctx.send(f'The provided arguments are not correct.')
-        # elif isinstance(error, exceptions.TooLongVideo):
-        #     await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
-        # elif isinstance(error, discord.errors.Forbidden):
-        #     await ctx.send("Error 403. The song could not be downloaded. Try again.")
-        # elif isinstance(error, exceptions.BotIsAlreadyPlaying):
-        #     await ctx.send("Bot is already playing some music.")
-        # elif isinstance(error, exceptions.BotIsNotPlaying):
-        #     await ctx.send("Bot is not playing some music at the moment.")
-        # elif isinstance(error, exceptions.QueueIsEmpty):
-        #     await ctx.send(f'There are no songs in the music queue.')
-        # elif isinstance(error, exceptions.PlaylistNotFound):
-        #     await ctx.send(f'There is no playlist named: {error.pl_name}')
-        # elif isinstance(error, TimeoutError):
-        #     await ctx.send("Expired [default = No]")
-        if True:
+        if isinstance(error, commands.CommandNotFound):
+            await ctx.send(f'{ctx.message.content.split(" ")[0]} is not an available command. Type {self.prefix}help to get more information.')
+        elif isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(f'The command is on cooldown. Wait {error.retry_after:.2f} seconds.')
+        elif isinstance(error, youtube_dl.DownloadError):
+            await ctx.send(f'There is a unexpected error during the download of the song.')
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f'A required argument is missing. ' + error.param.name)
+        elif isinstance(error, commands.ChannelNotFound):
+            await ctx.send(f"The {error.argument} is not connected to a voice channel.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send(f'The provided arguments are not correct.')
+        elif isinstance(error, exceptions.TooLongVideo):
+            await ctx.send(f'{error.title} is more than an hour long. ' + error.duration)
+        elif isinstance(error, discord.errors.Forbidden):
+            await ctx.send("Error 403. The song could not be downloaded. Try again.")
+        elif isinstance(error, exceptions.BotIsAlreadyPlaying):
+            await ctx.send("Bot is already playing some music.")
+        elif isinstance(error, exceptions.BotIsNotPlaying):
+            await ctx.send("Bot is not playing some music at the moment.")
+        elif isinstance(error, exceptions.QueueIsEmpty):
+            await ctx.send(f'There are no songs in the music queue.')
+        elif isinstance(error, exceptions.PlaylistNotFound):
+            await ctx.send(f'There is no playlist named: {error.pl_name}')
+        elif isinstance(error, TimeoutError):
+            await ctx.send("Expired [default = No]")
+        elif isinstance(error, exceptions.FileAlreadyExists):
+            await ctx.send(f'A file named {error.file} already exists.')
+        else:
             await self.add_to_error_log(error)
-            print(str(type(error)) + " - " + str(error))
             await ctx.send('Unexpected error.')
             await self.reload_bot(ctx)
